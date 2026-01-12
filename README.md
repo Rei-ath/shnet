@@ -64,3 +64,9 @@ Bitmap qr = Shnet.qr(links.get(0).url, 420);
 ```bash
 ./gradlew :shnet:assembleDebug
 ```
+
+## iOS note
+
+shnet is Android-only today. An iOS port would require a separate Swift
+implementation (e.g., `NWListener`) and cannot keep a persistent background
+service. iOS nodes must be on-demand/event-driven due to OS limits.
