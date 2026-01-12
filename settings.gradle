@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "shnet"
-include(":shnet", ":demo")
+include(":shnet")

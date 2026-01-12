@@ -11,42 +11,26 @@ import android.os.IBinder;
 
 import java.io.IOException;
 
-public abstract class ShnetService extends Service {
-    public static final String ACTION_START = "com.shivy.shnet.action.START";
-    public static final String ACTION_STOP = "com.shivy.shnet.action.STOP";
-
+public class ShnetNodeService extends Service {
     private ShnetServer server;
-    private ShnetConfig config;
+    private Shnet.Config config;
     private boolean running;
-
-    protected abstract ShnetRouter createRouter();
-
-    protected abstract ShnetConfig createConfig();
 
     @Override
     public void onCreate() {
         super.onCreate();
-        ShnetRouter router = createRouter();
-        config = createConfig();
-        server = new ShnetServer(router, config.port);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
-        if (ACTION_STOP.equals(action)) {
-            stopNode();
+        if (Shnet.ACTION_STOP.equals(action)) {
+            stopNode(true);
             return START_NOT_STICKY;
         }
 
-        if (ACTION_START.equals(action)) {
-            startNode();
-            return START_STICKY;
-        }
-
-        if (intent == null && ShnetRuntime.isRunning(this, getClass())) {
-            startNode();
-            return START_STICKY;
+        if (Shnet.ACTION_START.equals(action) || intent == null) {
+            return startNode();
         }
 
         return START_NOT_STICKY;
@@ -54,7 +38,7 @@ public abstract class ShnetService extends Service {
 
     @Override
     public void onDestroy() {
-        stopNode();
+        stopNode(false);
         super.onDestroy();
     }
 
@@ -63,48 +47,57 @@ public abstract class ShnetService extends Service {
         return null;
     }
 
-    protected Intent createOpenIntent() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (launch != null) {
-            launch.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        }
-        return launch;
-    }
-
-    private void startNode() {
+    private int startNode() {
         if (running) {
-            return;
+            return startMode();
         }
-        ShnetRuntime.setLastError(this, getClass(), "");
-        ShnetRuntime.setLastStartAttempt(this, getClass(), System.currentTimeMillis());
+        ShnetRuntime.setLastError(this, "");
+        ShnetRuntime.setLastStartAttempt(this, System.currentTimeMillis());
+        config = ShnetRuntime.loadConfig(this);
+        Shnet.Handler handler = ShnetRuntime.loadHandler(this);
+        if (config == null || handler == null) {
+            ShnetRuntime.setLastError(this, "Missing handler/config");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        server = new ShnetServer(handler, config);
         try {
             Notification notification = buildNotification();
-            startForeground(config.port, notification);
+            startForeground(notificationId(), notification);
             server.start();
             running = true;
-            ShnetRuntime.setRunning(this, getClass(), true);
+            ShnetRuntime.setRunning(this, true);
+            return startMode();
         } catch (IOException e) {
             running = false;
-            ShnetRuntime.setRunning(this, getClass(), false);
-            ShnetRuntime.setLastError(this, getClass(), safeError(e));
+            ShnetRuntime.setRunning(this, false);
+            ShnetRuntime.setLastError(this, safeError(e));
             stopForeground(true);
             stopSelf();
+            return START_NOT_STICKY;
         } catch (Exception e) {
             running = false;
-            ShnetRuntime.setRunning(this, getClass(), false);
-            ShnetRuntime.setLastError(this, getClass(), safeError(e));
+            ShnetRuntime.setRunning(this, false);
+            ShnetRuntime.setLastError(this, safeError(e));
             stopForeground(true);
             stopSelf();
+            return START_NOT_STICKY;
         }
     }
 
-    private void stopNode() {
-        if (running) {
+    private int startMode() {
+        return ShnetRuntime.isPersistent(this) ? START_STICKY : START_NOT_STICKY;
+    }
+
+    private void stopNode(boolean clearRuntime) {
+        if (running && server != null) {
             server.stop();
         }
         running = false;
-        ShnetRuntime.setRunning(this, getClass(), false);
-        ShnetRuntime.setLastError(this, getClass(), "");
+        ShnetRuntime.setRunning(this, false);
+        if (clearRuntime) {
+            ShnetRuntime.clear(this);
+        }
         stopForeground(true);
         stopSelf();
     }
@@ -123,7 +116,7 @@ public abstract class ShnetService extends Service {
         }
 
         Intent stopIntent = new Intent(this, getClass());
-        stopIntent.setAction(ACTION_STOP);
+        stopIntent.setAction(Shnet.ACTION_STOP);
         PendingIntent stopPending = PendingIntent.getService(
                 this,
                 1,
@@ -170,12 +163,27 @@ public abstract class ShnetService extends Service {
         manager.createNotificationChannel(channel);
     }
 
+    private Intent createOpenIntent() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (launch != null) {
+            launch.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        }
+        return launch;
+    }
+
     private int pendingIntentFlags() {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         return flags;
+    }
+
+    private int notificationId() {
+        if (config == null) {
+            return 1;
+        }
+        return config.port > 0 ? config.port : 1;
     }
 
     private String safeError(Exception e) {
