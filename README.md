@@ -59,6 +59,24 @@ List<Shnet.Link> links = Shnet.links(context, 8723, Shnet.LinkPreference.IPV6_FI
 Bitmap qr = Shnet.qr(links.get(0).url, 420);
 ```
 
+## HTTPS (optional)
+
+Create a keystore (BKS/PKCS12) and ship it as a raw resource or file, then:
+
+```java
+Shnet.TlsConfig tls = Shnet.TlsConfig.fromRawResource(R.raw.shnet_keystore, "password");
+Shnet.Config config = Shnet.Config.builder(
+        8723,
+        R.drawable.ic_node,
+        "node running",
+        "Tap to open"
+).setTlsConfig(tls).build();
+
+Shnet.start(context, config, new DemoHandler());
+
+List<Shnet.Link> links = Shnet.links(context, config, Shnet.LinkPreference.IPV6_FIRST);
+```
+
 ## Build
 
 ```bash
